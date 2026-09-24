@@ -12,8 +12,19 @@ if ($route === '') {
     $route = $_APP_CONFIG['default_route'] ?? 'auth/login';
 }
 
+$GLOBALS['__debug_request'] = [
+    'route' => $route,
+    'controller' => null,
+    'method' => null,
+    'controller_file' => null,
+    'controller_exists' => null,
+    'method_exists' => null,
+];
+
 $routeResolver = resolve_route($route);
+
 if ($routeResolver === null) {
+    error_log(sprintf('[duty-scheduling] 404: route "%s" is not registered in core/router.php', $route));
     http_response_code(404);
     include APP_ROOT . '/views/errors/404.php';
     exit;
@@ -21,25 +32,32 @@ if ($routeResolver === null) {
 
 [$controllerName, $actionName] = $routeResolver;
 
+$controllerFile = APP_ROOT . '/controllers/' . $controllerName . '.php';
+$GLOBALS['__debug_request']['controller'] = $controllerName;
+$GLOBALS['__debug_request']['method'] = $actionName;
+$GLOBALS['__debug_request']['controller_file'] = $controllerFile;
+$GLOBALS['__debug_request']['controller_exists'] = is_file($controllerFile);
+
+if (app_env() === 'local') {
+    error_log(sprintf(
+        '[duty-scheduling] route=%s | controller=%s | method=%s | file=%s | exists=%s',
+        $route,
+        $controllerName,
+        $actionName,
+        $controllerFile,
+        $GLOBALS['__debug_request']['controller_exists'] ? 'YES' : 'NO'
+    ));
+}
+
 if ($route !== 'auth/login' && $route !== 'auth/logout' && !is_logged_in()) {
     redirect(APP_PUBLIC_URL . '/?route=auth/login');
 }
 
 if (in_array($route, ['auth/login', 'auth/logout'], true)) {
-    require_once APP_ROOT . '/controllers/' . $controllerName . '.php';
-    $controller = new $controllerName();
-    $controller->{$actionName}();
+    dispatch_controller($controllerName, $actionName);
     exit;
 }
 
 require_permission('dashboard.view');
 
-require_once APP_ROOT . '/controllers/' . $controllerName . '.php';
-$controller = new $controllerName();
-if (!method_exists($controller, $actionName)) {
-    http_response_code(404);
-    include APP_ROOT . '/views/errors/404.php';
-    exit;
-}
-
-$controller->{$actionName}();
+dispatch_controller($controllerName, $actionName);

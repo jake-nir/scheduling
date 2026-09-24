@@ -21,8 +21,11 @@ $dbConfig = $dbConfig ?? [];
 
 $timezone = $config['timezone'] ?? 'UTC';
 date_default_timezone_set($timezone);
+
 error_reporting(E_ALL);
-ini_set('display_errors', ($config['env'] ?? 'production') === 'local' ? '1' : '0');
+$isLocalEnv = ($config['env'] ?? 'production') === 'local';
+ini_set('display_errors', $isLocalEnv ? '1' : '0');
+ini_set('display_startup_errors', $isLocalEnv ? '1' : '0');
 ini_set('log_errors', '1');
 
 session_name($config['session_name'] ?? 'duty_sched_session');
@@ -75,3 +78,74 @@ require_once APP_ROOT . '/core/AuditLog.php';
 
 require_once APP_ROOT . '/controllers/AuthController.php';
 require_once APP_ROOT . '/controllers/DashboardController.php';
+
+// ---------------------------------------------------------------------------
+// Error handling contract:
+// 404 = the requested route genuinely does not exist in route_map().
+// 500 = any application/PHP/server error while handling a route.
+// Authentication failures redirect to the login page.
+// Application errors are NEVER converted into 404 responses.
+// ---------------------------------------------------------------------------
+
+set_exception_handler(static function (Throwable $exception): void {
+    $trace = sprintf(
+        '[%s] Uncaught %s: %s in %s:%d',
+        date('Y-m-d H:i:s'),
+        get_class($exception),
+        $exception->getMessage(),
+        $exception->getFile(),
+        (int) $exception->getLine()
+    );
+    error_log($trace);
+    error_log($exception->getTraceAsString());
+
+    if (PHP_SAPI === 'cli') {
+        fwrite(STDERR, 'Uncaught ' . $trace . PHP_EOL . $exception->getTraceAsString() . PHP_EOL);
+        exit(1);
+    }
+
+    if (app_env() === 'local') {
+        http_response_code(500);
+        include APP_ROOT . '/views/errors/500.php';
+        exit;
+    }
+
+    render_error_page(500);
+    exit;
+});
+
+register_shutdown_function(static function (): void {
+    $error = error_get_last();
+    if ($error === null || !in_array($error['type'] ?? 0, [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) {
+        return;
+    }
+
+    error_log(sprintf(
+        '[%s] Fatal %s: %s in %s:%d',
+        date('Y-m-d H:i:s'),
+        (string) ($error['type'] ?? 'error'),
+        (string) ($error['message'] ?? ''),
+        (string) ($error['file'] ?? 'unknown'),
+        (int) ($error['line'] ?? 0)
+    ));
+
+    if (PHP_SAPI === 'cli' || headers_sent()) {
+        return;
+    }
+
+    if (app_env() === 'local') {
+        $GLOBALS['__render_exception'] = new ErrorException(
+            (string) ($error['message'] ?? 'Unknown fatal error'),
+            0,
+            (int) ($error['type'] ?? E_ERROR),
+            (string) ($error['file'] ?? ''),
+            (int) ($error['line'] ?? 0)
+        );
+        http_response_code(500);
+        include APP_ROOT . '/views/errors/500.php';
+        exit;
+    }
+
+    render_error_page(500);
+    exit;
+});

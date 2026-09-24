@@ -14,8 +14,6 @@ $menuItems = [
     ['label' => 'Duty Config', 'route' => 'duties/index', 'permission' => 'dutyconfig.manage'],
     ['label' => 'Users', 'route' => 'users/index', 'permission' => 'users.manage'],
     ['label' => 'Roles', 'route' => 'roles/index', 'permission' => 'users.manage'],
-    ['label' => 'Audit', 'route' => 'audit/index', 'permission' => 'audit.view'],
-    ['label' => 'Settings', 'route' => 'settings/index', 'permission' => 'settings.manage'],
 ];
 ?>
 <aside class="sidebar no-print">

@@ -43,3 +43,55 @@ function user_has_permission(string $permission): bool
     $permissions = $user['permissions'] ?? [];
     return in_array(normalize_permission($permission), $permissions, true);
 }
+
+function app_env(): string
+{
+    global $config;
+    $env = $config['env'] ?? 'production';
+    return is_string($env) ? $env : 'production';
+}
+
+function render_error_page(int $statusCode): void
+{
+    http_response_code($statusCode);
+    include APP_ROOT . '/views/errors/' . $statusCode . '.php';
+    exit;
+}
+
+function dispatch_controller(string $controllerName, string $methodName): void
+{
+    $controllerFile = APP_ROOT . '/controllers/' . $controllerName . '.php';
+
+    if (!is_file($controllerFile)) {
+        throw new RuntimeException(sprintf(
+            'Controller not found: route "%s" expects "%s" at %s (file does not exist).',
+            $GLOBALS['__debug_request']['route'] ?? '',
+            $controllerName,
+            $controllerFile
+        ));
+    }
+
+    require_once $controllerFile;
+
+    if (!class_exists($controllerName)) {
+        throw new RuntimeException(sprintf(
+            'Controller not found: class "%s" was not declared in %s.',
+            $controllerName,
+            $controllerFile
+        ));
+    }
+
+    $controller = new $controllerName();
+    $GLOBALS['__debug_request']['method_exists'] = method_exists($controller, $methodName);
+
+    if (!$GLOBALS['__debug_request']['method_exists']) {
+        throw new RuntimeException(sprintf(
+            'Method not found: "%s" does not exist on controller "%s" (route "%s").',
+            $methodName,
+            $controllerName,
+            $GLOBALS['__debug_request']['route'] ?? ''
+        ));
+    }
+
+    $controller->{$methodName}();
+}
