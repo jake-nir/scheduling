@@ -218,7 +218,7 @@ CREATE TABLE duty_rotation_members (
 CREATE TABLE personnel_availability (
     id INT NOT NULL AUTO_INCREMENT,
     personnel_id INT NOT NULL,
-    status ENUM('Available','Leave','Schooling','Sick','Official Assignment','Training','Temporarily Unavailable','Other') NOT NULL,
+    status ENUM('Leave','Schooling','Sick','Official Assignment','Training','Temporarily Unavailable','Other') NOT NULL,
     start_date DATE NOT NULL,
     end_date DATE NULL,
     reason VARCHAR(255) NULL,

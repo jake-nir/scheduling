@@ -3,6 +3,15 @@ declare(strict_types=1);
 
 $date = trim((string) ($_GET['date'] ?? date('Y-m-d')));
 $selectedDutyId = (int) ($_GET['duty_id'] ?? 0);
+$scheduleDate = validate_date($date) ? $date : date('Y-m-d');
+
+$unavailableNotes = [];
+foreach ($personnel as $member) {
+    $note = Availability::unavailableOnDate((int) ($member['id'] ?? 0), $scheduleDate);
+    if ($note !== null) {
+        $unavailableNotes[(int) ($member['id'] ?? 0)] = $note;
+    }
+}
 ?>
 <div class="panel">
     <div class="panel-header">
@@ -23,9 +32,16 @@ $selectedDutyId = (int) ($_GET['duty_id'] ?? 0);
                     <select name="personnel_id" required>
                         <option value="">Select personnel</option>
                         <?php foreach ($personnel as $member): ?>
-                            <option value="<?= e((string) $member['id']); ?>"><?= e(Personnel::displayName($member)); ?></option>
+                            <?php $note = $unavailableNotes[(int) ($member['id'] ?? 0)] ?? null; ?>
+                            <option value="<?= e((string) $member['id']); ?>" <?= $note !== null ? 'disabled data-unavailable="1"' : ''; ?>>
+                                <?= e(Personnel::displayName($member)); ?>
+                                <?php if ($note !== null): ?>
+                                    <?= e('(Unavailable: due to ' . ($note['status'] ?? 'an exception') . '.)'); ?>
+                                <?php endif; ?>
+                            </option>
                         <?php endforeach; ?>
                     </select>
+                    <span class="field-hint">Unavailable personnel are disabled by default. Choose "Availability override" and click "Proceed with Warning" to assign them anyway.</span>
                 </div>
                 <div class="form-group">
                     <label>Duty</label>
@@ -88,3 +104,25 @@ $selectedDutyId = (int) ($_GET['duty_id'] ?? 0);
         </form>
     </div>
 </div>
+
+<script>
+    (function () {
+        var overrideSelect = document.querySelector('select[name="override_type"]');
+        var personnelSelect = document.querySelector('select[name="personnel_id"]');
+        if (!overrideSelect || !personnelSelect) {
+            return;
+        }
+
+        function syncUnavailableOptions() {
+            var allow = overrideSelect.value === 'availability_override';
+            [].forEach.call(personnelSelect.options, function (option) {
+                if (option.dataset.unavailable === '1') {
+                    option.disabled = !allow;
+                }
+            });
+        }
+
+        overrideSelect.addEventListener('change', syncUnavailableOptions);
+        syncUnavailableOptions();
+    })();
+</script>

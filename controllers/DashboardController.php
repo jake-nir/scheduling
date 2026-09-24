@@ -52,25 +52,56 @@ class DashboardController
     public static function personnelStatusCounts(): array
     {
         $pdo = get_db();
-        $statement = $pdo->query(
-            'SELECT status, COUNT(*) AS total
-             FROM personnel_availability
-             GROUP BY status
-             ORDER BY status ASC'
-        );
-        $rows = $statement->fetchAll() ?: [];
+        $today = date('Y-m-d');
+
         $counts = [];
-        foreach ($rows as $row) {
-            $counts[(string) ($row['status'] ?? 'Available')] = (int) ($row['total'] ?? 0);
+        foreach (Availability::EXCEPTION_STATUSES as $status) {
+            $counts[$status] = 0;
         }
 
-        foreach (['Available', 'Leave', 'Schooling', 'Sick', 'Other'] as $status) {
-            if (!isset($counts[$status])) {
-                $counts[$status] = 0;
+        $statement = $pdo->prepare(
+            'SELECT a.status, COUNT(DISTINCT a.personnel_id) AS total
+             FROM personnel_availability a
+             INNER JOIN personnel p ON p.id = a.personnel_id AND p.status = :personnel_status
+             WHERE a.start_date <= :start_date
+               AND (a.end_date IS NULL OR a.end_date >= :end_date)
+             GROUP BY a.status'
+        );
+        $statement->execute([
+            ':personnel_status' => 'active',
+            ':start_date' => $today,
+            ':end_date' => $today,
+        ]);
+
+        $unavailableTotal = 0;
+        foreach ($statement->fetchAll() ?: [] as $row) {
+            $status = (string) ($row['status'] ?? '');
+            $total = (int) ($row['total'] ?? 0);
+            if (isset($counts[$status])) {
+                $counts[$status] = $total;
+                $unavailableTotal += $total;
             }
         }
 
-        return $counts;
+        $activeStatement = $pdo->prepare('SELECT COUNT(*) FROM personnel WHERE status = :status');
+        $activeStatement->execute([':status' => 'active']);
+        $activeTotal = (int) $activeStatement->fetchColumn();
+
+        $counts['Available'] = max(0, $activeTotal - $unavailableTotal);
+
+        $ordered = ['Available'];
+        foreach (Availability::EXCEPTION_STATUSES as $status) {
+            $ordered[] = $status;
+        }
+
+        $result = [];
+        foreach ($ordered as $status) {
+            if (isset($counts[$status])) {
+                $result[$status] = $counts[$status];
+            }
+        }
+
+        return $result;
     }
 
     public static function scheduleAlerts(): array

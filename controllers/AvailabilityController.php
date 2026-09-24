@@ -7,7 +7,7 @@ class AvailabilityController
     {
         require_permission('availability.view');
 
-        $pageTitle = 'Availability';
+        $pageTitle = 'Unavailability';
         $personnel = Personnel::all();
         $viewFile = APP_ROOT . '/views/availability/list.php';
 
@@ -18,8 +18,27 @@ class AvailabilityController
     {
         require_permission('availability.manage');
 
-        $pageTitle = 'Add Availability';
-        $personnel = Personnel::all();
+        $pageTitle = 'Record Personnel Unavailability';
+        $personnel = self::activePersonnel();
+        $availability = null;
+        $viewFile = APP_ROOT . '/views/availability/form.php';
+
+        include APP_ROOT . '/views/layouts/layout.php';
+    }
+
+    public function edit(): void
+    {
+        require_permission('availability.manage');
+
+        $id = (int) ($_GET['id'] ?? 0);
+        $availability = Availability::findById($id);
+        if ($availability === null) {
+            flash('error', 'Availability record not found.');
+            redirect(APP_PUBLIC_URL . '/?route=availability/index');
+        }
+
+        $pageTitle = 'Edit Unavailability';
+        $personnel = self::activePersonnel();
         $viewFile = APP_ROOT . '/views/availability/form.php';
 
         include APP_ROOT . '/views/layouts/layout.php';
@@ -38,44 +57,164 @@ class AvailabilityController
             redirect(APP_PUBLIC_URL . '/?route=availability/index');
         }
 
+        $data = self::validatedInput();
+        if (!empty($data['errors'])) {
+            flash('error', implode(' ', $data['errors']));
+            redirect(APP_PUBLIC_URL . '/?route=availability/create');
+        }
+
+        $input = $data['input'] ?? [];
+        $id = Availability::create($input);
+
+        AuditLog::log(
+            'availability.add',
+            'availability',
+            'Unavailability recorded.',
+            current_user()['id'] ?? null,
+            current_user()['username'] ?? null,
+            'personnel_availability',
+            $id,
+            $_SERVER['REMOTE_ADDR'] ?? null
+        );
+        flash('success', 'Unavailability recorded.');
+        redirect(APP_PUBLIC_URL . '/?route=availability/index');
+    }
+
+    public function update(): void
+    {
+        require_permission('availability.manage');
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            redirect(APP_PUBLIC_URL . '/?route=availability/index');
+        }
+
+        if (!csrf_verify($_POST['csrf_token'] ?? null)) {
+            flash('error', 'Security token expired. Please try again.');
+            redirect(APP_PUBLIC_URL . '/?route=availability/index');
+        }
+
+        $id = (int) ($_POST['id'] ?? 0);
+        $existing = Availability::findById($id);
+        if ($existing === null) {
+            flash('error', 'Availability record not found.');
+            redirect(APP_PUBLIC_URL . '/?route=availability/index');
+        }
+
+        $data = self::validatedInput($id);
+        if (!empty($data['errors'])) {
+            flash('error', implode(' ', $data['errors']));
+            redirect(APP_PUBLIC_URL . '/?route=availability/edit&id=' . $id);
+        }
+
+        $input = $data['input'] ?? [];
+        Availability::update($id, $input);
+
+        AuditLog::log(
+            'availability.update',
+            'availability',
+            'Unavailability updated.',
+            current_user()['id'] ?? null,
+            current_user()['username'] ?? null,
+            'personnel_availability',
+            $id,
+            $_SERVER['REMOTE_ADDR'] ?? null
+        );
+        flash('success', 'Unavailability updated.');
+        redirect(APP_PUBLIC_URL . '/?route=availability/index');
+    }
+
+    public function delete(): void
+    {
+        require_permission('availability.manage');
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            redirect(APP_PUBLIC_URL . '/?route=availability/index');
+        }
+
+        if (!csrf_verify($_POST['csrf_token'] ?? null)) {
+            flash('error', 'Security token expired. Please try again.');
+            redirect(APP_PUBLIC_URL . '/?route=availability/index');
+        }
+
+        $id = (int) ($_POST['id'] ?? 0);
+        $existing = Availability::findById($id);
+        if ($existing === null) {
+            flash('error', 'Availability record not found.');
+            redirect(APP_PUBLIC_URL . '/?route=availability/index');
+        }
+
+        Availability::delete($id);
+
+        AuditLog::log(
+            'availability.delete',
+            'availability',
+            'Unavailability deleted.',
+            current_user()['id'] ?? null,
+            current_user()['username'] ?? null,
+            'personnel_availability',
+            $id,
+            $_SERVER['REMOTE_ADDR'] ?? null
+        );
+        flash('success', 'Unavailability removed.');
+        redirect(APP_PUBLIC_URL . '/?route=availability/index');
+    }
+
+    private static function activePersonnel(): array
+    {
+        $personnel = array_filter(
+            Personnel::all(),
+            static fn (array $person): bool => ($person['status'] ?? 'inactive') === 'active'
+        );
+
+        return array_values($personnel);
+    }
+
+    private static function validatedInput(?int $excludeId = null): array
+    {
+        $errors = [];
         $personnelId = (int) ($_POST['personnel_id'] ?? 0);
-        $status = trim((string) ($_POST['status'] ?? 'Available'));
+        $status = trim((string) ($_POST['status'] ?? ''));
         $startDate = trim((string) ($_POST['start_date'] ?? ''));
         $endDate = trim((string) ($_POST['end_date'] ?? ''));
         $reason = trim((string) ($_POST['reason'] ?? ''));
         $remarks = trim((string) ($_POST['remarks'] ?? ''));
 
-        if ($personnelId <= 0 || $startDate === '') {
-            flash('error', 'Personnel and start date are required.');
-            redirect(APP_PUBLIC_URL . '/?route=availability/create');
+        if ($personnelId <= 0) {
+            $errors[] = 'Personnel is required.';
         }
 
-        if (!validate_date($startDate) || ($endDate !== '' && !validate_date($endDate))) {
-            flash('error', 'Please enter valid dates.');
-            redirect(APP_PUBLIC_URL . '/?route=availability/create');
+        if (!Availability::isExceptionStatus($status)) {
+            $errors[] = 'A valid unavailability type is required.';
         }
 
-        if ($endDate !== '' && strtotime($endDate) < strtotime($startDate)) {
-            flash('error', 'End date cannot be earlier than start date.');
-            redirect(APP_PUBLIC_URL . '/?route=availability/create');
+        if ($startDate === '' || !validate_date($startDate)) {
+            $errors[] = 'Start date is required and must be a valid date.';
+        } elseif ($endDate !== '' && !validate_date($endDate)) {
+            $errors[] = 'End date must be a valid date.';
+        } elseif ($endDate !== '' && strtotime($endDate) < strtotime($startDate)) {
+            $errors[] = 'End date cannot be earlier than start date.';
         }
 
-        if (Availability::overlapsForPerson($personnelId, $startDate, $endDate !== '' ? $endDate : $startDate)) {
-            flash('error', 'Availability overlap detected for this person.');
-            redirect(APP_PUBLIC_URL . '/?route=availability/create');
+        if ($status === 'Other' && $reason === '') {
+            $errors[] = 'A reason is required when the type is Other.';
         }
 
-        Availability::create([
-            'personnel_id' => $personnelId,
-            'status' => $status,
-            'start_date' => $startDate,
-            'end_date' => $endDate,
-            'reason' => $reason,
-            'remarks' => $remarks,
-        ]);
+        if (empty($errors)) {
+            if (Availability::overlapsForPerson($personnelId, $startDate, $endDate !== '' ? $endDate : $startDate, $excludeId)) {
+                $errors[] = 'This personnel already has an unavailability record that overlaps the selected period.';
+            }
+        }
 
-        AuditLog::log('availability.add', 'availability', 'Availability added.', current_user()['id'] ?? null, current_user()['username'] ?? null, 'personnel_availability', null, $_SERVER['REMOTE_ADDR'] ?? null);
-        flash('success', 'Availability saved.');
-        redirect(APP_PUBLIC_URL . '/?route=availability/index');
+        return [
+            'errors' => $errors,
+            'input' => [
+                'personnel_id' => $personnelId,
+                'status' => $status,
+                'start_date' => $startDate,
+                'end_date' => $endDate,
+                'reason' => $reason,
+                'remarks' => $remarks,
+            ],
+        ];
     }
 }

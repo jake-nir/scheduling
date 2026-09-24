@@ -5,7 +5,7 @@ $menuItems = [
     ['label' => 'Dashboard', 'route' => 'dashboard/index', 'permission' => 'dashboard.view'],
     ['label' => 'Calendar', 'route' => 'calendar/index', 'permission' => 'calendar.view'],
     ['label' => 'Personnel', 'route' => 'personnel/index', 'permission' => 'personnel.view'],
-    ['label' => 'Availability', 'route' => 'availability/index', 'permission' => 'availability.view'],
+    ['label' => 'Unavailability', 'route' => 'availability/index', 'permission' => 'availability.view'],
     ['label' => 'Duty History', 'route' => 'dutyhistory/index', 'permission' => 'dutyhistory.view'],
     ['label' => 'Scheduling', 'route' => 'schedule/index', 'permission' => 'schedule.manage'],
     ['label' => 'Rotation', 'route' => 'rotation/index', 'permission' => 'rotation.view'],

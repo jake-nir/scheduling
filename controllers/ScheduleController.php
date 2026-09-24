@@ -52,14 +52,20 @@ class ScheduleController
         ];
 
         $result = Scheduler::evaluate($assignment);
+        $confirmed = !empty($_POST['confirm_warning']);
+        $overrideType = trim((string) ($_POST['override_type'] ?? 'rank_substitution'));
+
         if ($result['status'] === 'BLOCKED') {
-            flash('error', implode('; ', $result['issues']));
-            redirect(APP_PUBLIC_URL . '/?route=schedule/create&date=' . urlencode($assignment['schedule_date']));
+            $availabilityOverride = $overrideType === 'availability_override'
+                && $confirmed
+                && ConflictDetector::isAvailabilityOnlyBlock($result['blocking_issues'] ?? $result['issues']);
+            if (!$availabilityOverride) {
+                flash('error', implode('; ', $result['issues']));
+                redirect(APP_PUBLIC_URL . '/?route=schedule/create&date=' . urlencode($assignment['schedule_date']));
+            }
         }
 
-        $confirmed = !empty($_POST['confirm_warning']);
         $reason = trim((string) ($_POST['reason'] ?? ''));
-        $overrideType = trim((string) ($_POST['override_type'] ?? 'rank_substitution'));
 
         try {
             $scheduleId = Scheduler::manualAssign($assignment, [

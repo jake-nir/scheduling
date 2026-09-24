@@ -13,6 +13,7 @@ $records = $records ?? [];
         </form>
     </div>
     <div class="panel-body">
+        <p class="muted">Personnel are available by default. Only unavailability periods within the range are listed.</p>
         <table class="data-table">
             <thead>
                 <tr>

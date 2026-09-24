@@ -101,22 +101,7 @@ class RotationEngine
 
     public static function isPersonnelAvailableForDuty(int $personnelId, string $date): bool
     {
-        $pdo = get_db();
-        $statement = $pdo->prepare(
-            'SELECT id FROM personnel_availability
-             WHERE personnel_id = :personnel_id
-               AND status = :status
-               AND start_date <= :start_date
-               AND (end_date IS NULL OR end_date >= :end_date)'
-        );
-        $statement->execute([
-            ':personnel_id' => $personnelId,
-            ':status' => 'Leave',
-            ':start_date' => $date,
-            ':end_date' => $date,
-        ]);
-
-        return $statement->fetchColumn() === false;
+        return Availability::unavailableOnDate($personnelId, $date) === null;
     }
 
     public static function recommendationFeed(int $dutyId, string $date, ?int $subDutyId = null, ?int $reliefId = null): array

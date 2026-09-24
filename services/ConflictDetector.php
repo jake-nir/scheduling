@@ -34,6 +34,7 @@ class ConflictDetector
 
         $status = 'RECOMMENDED';
         $issues = [];
+        $availabilityBlocked = false;
 
         if (($personnel['status'] ?? 'inactive') !== 'active') {
             $status = 'BLOCKED';
@@ -63,7 +64,19 @@ class ConflictDetector
 
         if (self::hasAvailabilityBlock($personnelId, $date)) {
             $status = 'BLOCKED';
-            $issues[] = 'Personnel is on Leave for that date.';
+            $availabilityBlocked = true;
+            $unavailable = Availability::unavailableOnDate($personnelId, $date);
+            $personName = Personnel::displayName($personnel);
+            if ($unavailable !== null) {
+                $issues[] = sprintf(
+                    '%s is unavailable on %s due to %s.',
+                    $personName,
+                    $date,
+                    (string) ($unavailable['status'] ?? 'an exception')
+                );
+            } else {
+                $issues[] = 'Personnel is unavailable on that date.';
+            }
         }
 
         if (self::hasSameDayConflict($personnelId, $date, $assignment)) {
@@ -77,6 +90,7 @@ class ConflictDetector
         }
 
         $warningIssues = [];
+        $blockingIssues = $issues;
         $normalDuty = self::normalPrimaryDutyForPersonnel($personnelId, $dutyId);
         if ($normalDuty !== null && (int) $normalDuty['id'] !== $dutyId) {
             $warningIssues[] = 'Duty differs from the person\'s normal primary duty assignment.';
@@ -117,6 +131,8 @@ class ConflictDetector
             'status' => $status,
             'issues' => array_values(array_unique($issues)),
             'severity' => strtolower($status),
+            'blocking_issues' => array_values(array_unique($blockingIssues)),
+            'availability_blocked' => $availabilityBlocked,
             'normal_duty' => $normalDuty,
         ];
     }
@@ -149,22 +165,22 @@ class ConflictDetector
 
     public static function hasAvailabilityBlock(int $personnelId, string $date): bool
     {
-        $pdo = get_db();
-        $statement = $pdo->prepare(
-            'SELECT id FROM personnel_availability
-             WHERE personnel_id = :personnel_id
-               AND status = :status
-               AND start_date <= :start_date
-               AND (end_date IS NULL OR end_date >= :end_date)'
-        );
-        $statement->execute([
-            ':personnel_id' => $personnelId,
-            ':status' => 'Leave',
-            ':start_date' => $date,
-            ':end_date' => $date,
-        ]);
+        return Availability::unavailableOnDate($personnelId, $date) !== null;
+    }
 
-        return (bool) $statement->fetchColumn();
+    public static function isAvailabilityOnlyBlock(array $issues): bool
+    {
+        if (empty($issues)) {
+            return false;
+        }
+
+        foreach ($issues as $issue) {
+            if (stripos((string) $issue, 'is unavailable on ') === false) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public static function hasSameDayConflict(int $personnelId, string $date, array $assignment): bool

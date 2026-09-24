@@ -171,7 +171,7 @@ ON DUPLICATE KEY UPDATE
   is_active = VALUES(is_active);
 
 INSERT INTO personnel_availability (id, personnel_id, status, start_date, end_date, reason, remarks, created_by) VALUES
-  (1, 6, 'Available', '2026-09-01', '2026-09-30', 'Standard availability', 'Ready for duty assignment.', 1)
+  (1, 6, 'Leave', '2026-09-25', '2026-09-30', 'Approved annual leave', 'On approved leave until end of the month.', 1)
 ON DUPLICATE KEY UPDATE
   personnel_id = VALUES(personnel_id),
   status = VALUES(status),

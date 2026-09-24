@@ -56,13 +56,19 @@ class Scheduler
         $reason = trim((string) ($options['reason'] ?? ''));
         $overrideType = trim((string) ($options['override_type'] ?? ''));
 
-        if ($result['status'] === 'BLOCKED') {
+        $availabilityOverride = $overrideType === 'availability_override'
+            && $confirmed
+            && ConflictDetector::isAvailabilityOnlyBlock($result['blocking_issues'] ?? $result['issues']);
+
+        if ($result['status'] === 'BLOCKED' && !$availabilityOverride) {
             throw new RuntimeException(implode('; ', $result['issues']));
         }
 
         if ($result['status'] === 'WARNING' && !$confirmed) {
             throw new RuntimeException('Warning requires confirmation before assignment can proceed.');
         }
+
+        $willOverride = $result['status'] === 'WARNING' || $availabilityOverride;
 
         $scheduleId = Schedule::create([
             'schedule_date' => $date,
@@ -73,7 +79,7 @@ class Scheduler
             'start_time' => $assignment['start_time'] ?? null,
             'end_time' => $assignment['end_time'] ?? null,
             'source' => 'manual',
-            'status' => $result['status'] === 'WARNING' ? 'overridden' : 'confirmed',
+            'status' => $willOverride ? 'overridden' : 'confirmed',
             'created_by' => (int) ($options['created_by'] ?? current_user()['id'] ?? 0),
         ]);
 
@@ -92,7 +98,9 @@ class Scheduler
                 ':cycle_number' => $cycle,
                 ':status' => 'completed',
                 ':completed_date' => $date,
-                ':notes' => $result['status'] === 'WARNING' ? 'Manual override approved.' : 'Assigned from rotation scheduler.',
+                ':notes' => $availabilityOverride
+                    ? 'Availability override approved.'
+                    : ($result['status'] === 'WARNING' ? 'Manual override approved.' : 'Assigned from rotation scheduler.'),
             ]);
 
             $pdo->prepare('UPDATE duty_rotation_groups SET current_position = :current_position WHERE id = :id')->execute([
@@ -101,7 +109,10 @@ class Scheduler
             ]);
         }
 
-        if ($result['status'] === 'WARNING') {
+        if ($willOverride) {
+            if ($availabilityOverride) {
+                $overrideType = 'availability_override';
+            }
             $overrideType = $overrideType !== '' ? $overrideType : self::defaultOverrideType($assignment, $result);
             self::saveOverride($scheduleId, $personnelId, $dutyId, $assignment, $overrideType, $reason, (int) ($options['created_by'] ?? current_user()['id'] ?? 0));
         }

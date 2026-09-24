@@ -16,9 +16,9 @@ declare(strict_types=1);
             <div><strong>Status:</strong> <?= e($person['status'] ?? 'inactive'); ?></div>
         </div>
 
-        <h3>Current / Future Availability</h3>
+        <h3>Current / Future Unavailability</h3>
         <?php if (empty($availabilities)): ?>
-            <p>No availability entries recorded.</p>
+            <p>No unavailability records. Personnel is available by default.</p>
         <?php else: ?>
             <table class="data-table">
                 <thead>

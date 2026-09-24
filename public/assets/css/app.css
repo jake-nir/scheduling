@@ -354,6 +354,50 @@ input:focus {
   color: var(--primary-dark);
 }
 
+.badge-success {
+  background: #f0fdf4;
+  color: var(--success);
+}
+
+.badge-warning {
+  background: #fffbeb;
+  color: var(--warning);
+}
+
+.badge-danger {
+  background: #fef2f2;
+  color: var(--danger);
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.field-hint {
+  display: block;
+  color: var(--muted);
+  font-size: 0.78rem;
+  margin-top: -8px;
+}
+
+.btn-danger {
+  background: #fef2f2;
+  color: var(--danger);
+}
+
+.inline-form {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sub-panel {
+  box-shadow: none;
+  border: 1px solid var(--border);
+  margin-bottom: 14px;
+}
+
 .panel-body {
   padding: 18px;
 }
