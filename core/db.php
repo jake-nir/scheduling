@@ -1,6 +1,22 @@
 <?php
 declare(strict_types=1);
 
+function ensure_user_security_columns(): void
+{
+    try {
+        $pdo = get_db();
+        $columns = $pdo->query("SHOW COLUMNS FROM users")->fetchAll(PDO::FETCH_COLUMN);
+        if (!in_array('failed_login_attempts', $columns, true)) {
+            $pdo->exec('ALTER TABLE users ADD COLUMN failed_login_attempts INT NOT NULL DEFAULT 0 AFTER status');
+        }
+        if (!in_array('locked_until', $columns, true)) {
+            $pdo->exec('ALTER TABLE users ADD COLUMN locked_until DATETIME NULL AFTER failed_login_attempts');
+        }
+    } catch (Throwable $exception) {
+        // Ignore migration failures during startup; they are retried on the next request.
+    }
+}
+
 function get_db(): PDO
 {
     static $pdo = null;
@@ -28,6 +44,8 @@ function get_db(): PDO
             PDO::ATTR_EMULATE_PREPARES => false,
         ]
     );
+
+    ensure_user_security_columns();
 
     return $pdo;
 }

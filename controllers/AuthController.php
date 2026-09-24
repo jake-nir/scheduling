@@ -17,9 +17,21 @@ class AuthController
                 } else {
                     $user = User::findByUsername($username);
 
-                    if (!$user || ($user['status'] ?? 'inactive') !== 'active' || !password_verify($password, $user['password_hash'] ?? '')) {
+                    if ($user && User::isLockedOut((int) $user['id'])) {
+                        flash('error', 'This account is temporarily locked. Please try again later.');
+                    } elseif (!$user || ($user['status'] ?? 'inactive') !== 'active') {
                         flash('error', 'Invalid username or password.');
+                    } elseif (!password_verify($password, $user['password_hash'] ?? '')) {
+                        $attempts = User::recordFailedLogin((int) $user['id']);
+                        if ($attempts >= 5) {
+                            flash('error', 'Too many failed login attempts. This account has been locked for 15 minutes.');
+                        } else {
+                            $remaining = max(0, 5 - $attempts);
+                            flash('error', 'Invalid username or password. Attempts remaining: ' . $remaining . '.');
+                        }
+                        AuditLog::log('login.failed', 'auth', 'Failed login attempt for user ' . ($user['username'] ?? $username) . '.', (int) $user['id'], (string) ($user['username'] ?? $username), 'users', (int) $user['id'], $_SERVER['REMOTE_ADDR'] ?? null);
                     } else {
+                        User::clearFailedLogin((int) $user['id']);
                         $role = Role::findById((int) ($user['role_id'] ?? 0));
                         $user['role_name'] = $role['role_name'] ?? '';
                         $user['permissions'] = Role::getPermissionsForRoleId((int) ($user['role_id'] ?? 0));

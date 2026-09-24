@@ -10,6 +10,37 @@ class Scheduler
         return $result;
     }
 
+    public static function recommend(array $assignment): array
+    {
+        $date = trim((string) ($assignment['schedule_date'] ?? date('Y-m-d')));
+        $dutyId = (int) ($assignment['duty_id'] ?? 0);
+        $subDutyId = !empty($assignment['subduty_id']) ? (int) $assignment['subduty_id'] : null;
+        $reliefId = !empty($assignment['relief_id']) ? (int) $assignment['relief_id'] : null;
+
+        if ($date === '' || !validate_date($date) || $dutyId <= 0) {
+            return [
+                'recommended' => [],
+                'alternates' => [],
+                'unavailable' => [],
+                'warnings' => ['Invalid date or duty selection.'],
+                'manual_enabled' => true,
+            ];
+        }
+
+        $feed = RotationEngine::recommendationFeed($dutyId, $date, $subDutyId, $reliefId);
+        $selected = (int) ($assignment['personnel_id'] ?? 0);
+        $recommendedPersonId = (int) ($feed['recommended'][0]['personnel_id'] ?? 0);
+
+        if ($selected > 0 && $recommendedPersonId > 0 && $selected !== $recommendedPersonId) {
+            $feed['warnings'][] = [
+                'personnel_id' => $selected,
+                'message' => 'Selected personnel is not the current rotation recommendation.',
+            ];
+        }
+
+        return $feed;
+    }
+
     public static function manualAssign(array $assignment, array $options = []): int
     {
         $personnelId = (int) ($assignment['personnel_id'] ?? 0);
@@ -39,10 +70,36 @@ class Scheduler
             'subduty_id' => $assignment['subduty_id'] ?? null,
             'relief_id' => $assignment['relief_id'] ?? null,
             'personnel_id' => $personnelId,
+            'start_time' => $assignment['start_time'] ?? null,
+            'end_time' => $assignment['end_time'] ?? null,
             'source' => 'manual',
             'status' => $result['status'] === 'WARNING' ? 'overridden' : 'confirmed',
             'created_by' => (int) ($options['created_by'] ?? current_user()['id'] ?? 0),
         ]);
+
+        $rotationGroup = RotationEngine::dutyGroupForDuty($dutyId);
+        if ($rotationGroup) {
+            $pdo = get_db();
+            $cycle = (int) ($rotationGroup['current_cycle'] ?? 1);
+            $statement = $pdo->prepare(
+                'INSERT INTO rotation_assignments (rotation_group_id, personnel_id, schedule_id, cycle_number, status, completed_date, notes)
+                 VALUES (:rotation_group_id, :personnel_id, :schedule_id, :cycle_number, :status, :completed_date, :notes)'
+            );
+            $statement->execute([
+                ':rotation_group_id' => (int) $rotationGroup['id'],
+                ':personnel_id' => $personnelId,
+                ':schedule_id' => $scheduleId,
+                ':cycle_number' => $cycle,
+                ':status' => 'completed',
+                ':completed_date' => $date,
+                ':notes' => $result['status'] === 'WARNING' ? 'Manual override approved.' : 'Assigned from rotation scheduler.',
+            ]);
+
+            $pdo->prepare('UPDATE duty_rotation_groups SET current_position = :current_position WHERE id = :id')->execute([
+                ':current_position' => self::nextSequencePosition((int) $rotationGroup['id'], $personnelId),
+                ':id' => (int) $rotationGroup['id'],
+            ]);
+        }
 
         if ($result['status'] === 'WARNING') {
             $overrideType = $overrideType !== '' ? $overrideType : self::defaultOverrideType($assignment, $result);
@@ -100,5 +157,17 @@ class Scheduler
         }
 
         return 'rank_substitution';
+    }
+
+    private static function nextSequencePosition(int $groupId, int $personnelId): int
+    {
+        $members = RotationMember::allForGroup($groupId);
+        foreach ($members as $member) {
+            if ((int) ($member['personnel_id'] ?? 0) === $personnelId) {
+                return (int) ($member['sequence'] ?? 0);
+            }
+        }
+
+        return 0;
     }
 }

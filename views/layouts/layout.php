@@ -42,5 +42,6 @@ unset($_SESSION['flash']);
     </div>
 
     <script src="<?= e(APP_PUBLIC_URL . '/assets/js/app.js'); ?>"></script>
+    <script src="<?= e(APP_PUBLIC_URL . '/assets/js/pod.js'); ?>"></script>
 </body>
 </html>

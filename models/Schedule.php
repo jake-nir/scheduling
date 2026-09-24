@@ -7,7 +7,8 @@ class Schedule
     {
         $pdo = get_db();
         $statement = $pdo->prepare(
-            'SELECT s.*, d.duty_name, d.start_time AS duty_start_time, d.end_time AS duty_end_time,
+            'SELECT s.*, s.start_time AS assignment_start_time, s.end_time AS assignment_end_time,
+                    d.duty_name, d.start_time AS duty_start_time, d.end_time AS duty_end_time,
                     p.first_name, p.last_name, p.service_number,
                     r.rank_abbr,
                     sd.subduty_name,
@@ -37,8 +38,8 @@ class Schedule
     {
         $pdo = get_db();
         $statement = $pdo->prepare(
-            'INSERT INTO schedules (schedule_date, duty_id, subduty_id, relief_id, personnel_id, source, status, created_by)
-             VALUES (:schedule_date, :duty_id, :subduty_id, :relief_id, :personnel_id, :source, :status, :created_by)'
+            'INSERT INTO schedules (schedule_date, duty_id, subduty_id, relief_id, personnel_id, start_time, end_time, source, status, created_by)
+             VALUES (:schedule_date, :duty_id, :subduty_id, :relief_id, :personnel_id, :start_time, :end_time, :source, :status, :created_by)'
         );
         $statement->execute([
             ':schedule_date' => trim((string) ($data['schedule_date'] ?? '')),
@@ -46,11 +47,33 @@ class Schedule
             ':subduty_id' => !empty($data['subduty_id']) ? (int) $data['subduty_id'] : null,
             ':relief_id' => !empty($data['relief_id']) ? (int) $data['relief_id'] : null,
             ':personnel_id' => (int) ($data['personnel_id'] ?? 0),
+            ':start_time' => self::sanitizeTime((string) ($data['start_time'] ?? '')),
+            ':end_time' => self::sanitizeTime((string) ($data['end_time'] ?? '')),
             ':source' => isset($data['source']) ? (string) $data['source'] : 'manual',
             ':status' => isset($data['status']) ? (string) $data['status'] : 'planned',
             ':created_by' => (int) ($data['created_by'] ?? current_user()['id'] ?? 0),
         ]);
         return (int) $pdo->lastInsertId();
+    }
+
+    private static function sanitizeTime(string $value): ?string
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return null;
+        }
+
+        foreach (['H:i:s', 'H:i'] as $format) {
+            $time = DateTime::createFromFormat($format, $value);
+            if ($time instanceof DateTime) {
+                $normalized = $time->format($format);
+                if ($normalized === $value || $time->format('H:i:s') === $value) {
+                    return $time->format('H:i:s');
+                }
+            }
+        }
+
+        return null;
     }
 
     public static function delete(int $id): bool

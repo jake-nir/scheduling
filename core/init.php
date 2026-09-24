@@ -26,17 +26,22 @@ ini_set('display_errors', ($config['env'] ?? 'production') === 'local' ? '1' : '
 ini_set('log_errors', '1');
 
 session_name($config['session_name'] ?? 'duty_sched_session');
+$secureCookie = (isset($_SERVER['HTTPS']) && strtolower((string) $_SERVER['HTTPS']) !== 'off') || (isset($_SERVER['SERVER_PORT']) && (string) $_SERVER['SERVER_PORT'] === '443');
 session_set_cookie_params([
     'lifetime' => 0,
     'path' => '/',
     'domain' => '',
-    'secure' => false,
+    'secure' => $secureCookie,
     'httponly' => true,
     'samesite' => 'Lax',
 ]);
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
+}
+
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
 
 global $_APP_CONFIG;

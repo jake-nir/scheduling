@@ -82,6 +82,16 @@ class ConflictDetector
             $warningIssues[] = 'Duty differs from the person\'s normal primary duty assignment.';
         }
 
+        $rotationBypass = self::rotationBypassWarning($personnelId, $dutyId, $date, $assignment);
+        if ($rotationBypass !== null) {
+            $warningIssues[] = $rotationBypass;
+        }
+
+        $sentinelRepeat = self::sentinelRepeatWarning($personnelId, $subDutyId, $date, $assignment);
+        if ($sentinelRepeat !== null) {
+            $warningIssues[] = $sentinelRepeat;
+        }
+
         $restGapWarning = self::restGapWarning($personnelId, $date, $dutyId);
         if ($restGapWarning !== null) {
             $warningIssues[] = $restGapWarning;
@@ -124,13 +134,14 @@ class ConflictDetector
              WHERE rank_id = :rank_id
                AND duty_id = :duty_id
                AND is_active = 1
-               AND (subduty_id IS NULL OR subduty_id = :subduty_id OR :subduty_id IS NULL)
+               AND (:subduty_id IS NULL OR subduty_id IS NULL OR subduty_id = :requested_subduty_id)
              LIMIT 1'
         );
         $statement->execute([
             ':rank_id' => (int) ($personnel['rank_id'] ?? 0),
             ':duty_id' => $dutyId,
             ':subduty_id' => $subDutyId,
+            ':requested_subduty_id' => $subDutyId,
         ]);
 
         return (bool) $statement->fetchColumn();
@@ -143,13 +154,14 @@ class ConflictDetector
             'SELECT id FROM personnel_availability
              WHERE personnel_id = :personnel_id
                AND status = :status
-               AND start_date <= :date
-               AND (end_date IS NULL OR end_date >= :date)'
+               AND start_date <= :start_date
+               AND (end_date IS NULL OR end_date >= :end_date)'
         );
         $statement->execute([
             ':personnel_id' => $personnelId,
             ':status' => 'Leave',
-            ':date' => $date,
+            ':start_date' => $date,
+            ':end_date' => $date,
         ]);
 
         return (bool) $statement->fetchColumn();
@@ -159,7 +171,8 @@ class ConflictDetector
     {
         $pdo = get_db();
         $statement = $pdo->prepare(
-            'SELECT s.id, d.start_time, d.end_time
+            'SELECT s.id, s.start_time AS assignment_start_time, s.end_time AS assignment_end_time,
+                    d.start_time AS duty_start_time, d.end_time AS duty_end_time
              FROM schedules s
              LEFT JOIN duties d ON d.id = s.duty_id
              WHERE s.personnel_id = :personnel_id
@@ -177,12 +190,28 @@ class ConflictDetector
         $newEnd = trim((string) ($assignment['end_time'] ?? '')) !== '' ? (string) $assignment['end_time'] : null;
 
         if ($newStart === null && $newEnd === null) {
+            foreach ($rows as $row) {
+                $existingStart = $row['assignment_start_time'] ?? null;
+                $existingEnd = $row['assignment_end_time'] ?? null;
+                if ($existingStart === null && $existingEnd === null) {
+                    $existingStart = $row['duty_start_time'] ?? null;
+                    $existingEnd = $row['duty_end_time'] ?? null;
+                }
+                if ($existingStart === null && $existingEnd === null) {
+                    return true;
+                }
+            }
             return !empty($rows);
         }
 
         foreach ($rows as $row) {
-            $existingStart = $row['start_time'] ?? null;
-            $existingEnd = $row['end_time'] ?? null;
+            $existingStart = $row['assignment_start_time'] ?? null;
+            $existingEnd = $row['assignment_end_time'] ?? null;
+            if ($existingStart === null && $existingEnd === null) {
+                $existingStart = $row['duty_start_time'] ?? null;
+                $existingEnd = $row['duty_end_time'] ?? null;
+            }
+
             if ($existingStart === null && $existingEnd === null) {
                 return true;
             }
@@ -233,6 +262,57 @@ class ConflictDetector
 
         $row['id'] = (int) $row['duty_id'];
         return $row;
+    }
+
+    public static function rotationBypassWarning(int $personnelId, int $dutyId, string $date, array $assignment): ?string
+    {
+        $group = RotationEngine::dutyGroupForDuty($dutyId);
+        if (!$group) {
+            return null;
+        }
+
+        $recommendedPersonId = !empty($assignment['recommended_personnel_id']) ? (int) $assignment['recommended_personnel_id'] : 0;
+        if ($recommendedPersonId > 0 && $recommendedPersonId !== $personnelId) {
+            return 'Selected member bypasses the current rotation recommendation.';
+        }
+
+        return null;
+    }
+
+    public static function sentinelRepeatWarning(int $personnelId, ?int $subDutyId, string $date, array $assignment): ?string
+    {
+        if ($subDutyId === null || $subDutyId <= 0) {
+            return null;
+        }
+
+        $reliefId = !empty($assignment['relief_id']) ? (int) $assignment['relief_id'] : 0;
+        if ($reliefId <= 0) {
+            return null;
+        }
+
+        $pdo = get_db();
+        $statement = $pdo->prepare(
+            'SELECT s.id
+             FROM schedules s
+             WHERE s.personnel_id = :personnel_id
+               AND s.subduty_id = :subduty_id
+               AND s.relief_id = :relief_id
+               AND s.schedule_date < :date
+             ORDER BY s.schedule_date DESC, s.id DESC
+             LIMIT 1'
+        );
+        $statement->execute([
+            ':personnel_id' => $personnelId,
+            ':subduty_id' => $subDutyId,
+            ':relief_id' => $reliefId,
+            ':date' => $date,
+        ]);
+
+        if ($statement->fetchColumn()) {
+            return 'This sentinel relief repeats a recent assignment within the same cycle.';
+        }
+
+        return null;
     }
 
     public static function restGapWarning(int $personnelId, string $date, int $dutyId): ?string

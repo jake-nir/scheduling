@@ -375,6 +375,26 @@ input:focus {
   print-color-adjust: exact;
 }
 
+.meta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.stacked-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
 @media (max-width: 760px) {
   .app-shell {
     display: block;
@@ -388,5 +408,23 @@ input:focus {
     flex-direction: column;
     align-items: flex-start;
     gap: 12px;
+  }
+
+  .content-area {
+    padding: 18px 12px;
+  }
+
+  .data-table {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+
+  .panel-header {
+    padding: 14px 12px;
+  }
+
+  .panel-body {
+    padding: 14px 12px;
   }
 }

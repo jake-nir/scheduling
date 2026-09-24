@@ -137,8 +137,74 @@ class User
     public static function updateLastLogin(int $id): bool
     {
         $pdo = get_db();
-        $statement = $pdo->prepare('UPDATE users SET last_login = NOW() WHERE id = :id');
+        $statement = $pdo->prepare('UPDATE users SET last_login = NOW(), failed_login_attempts = 0, locked_until = NULL WHERE id = :id');
         return $statement->execute([':id' => $id]);
+    }
+
+    public static function isLockedOut(int $userId): bool
+    {
+        $pdo = get_db();
+        $statement = $pdo->prepare('SELECT failed_login_attempts, locked_until FROM users WHERE id = :id LIMIT 1');
+        $statement->execute([':id' => $userId]);
+        $row = $statement->fetch();
+
+        if (!$row) {
+            return false;
+        }
+
+        $attempts = (int) ($row['failed_login_attempts'] ?? 0);
+        $lockedUntil = (string) ($row['locked_until'] ?? '');
+
+        if ($attempts < 5 || $lockedUntil === '') {
+            return false;
+        }
+
+        $lockTime = new DateTimeImmutable($lockedUntil, new DateTimeZone(date_default_timezone_get()));
+        return $lockTime > new DateTimeImmutable('now', new DateTimeZone(date_default_timezone_get()));
+    }
+
+    public static function recordFailedLogin(int $userId): int
+    {
+        $pdo = get_db();
+        $statement = $pdo->prepare('SELECT failed_login_attempts, locked_until FROM users WHERE id = :id LIMIT 1');
+        $statement->execute([':id' => $userId]);
+        $row = $statement->fetch();
+
+        if (!$row) {
+            return 0;
+        }
+
+        $attempts = (int) ($row['failed_login_attempts'] ?? 0);
+        $lockedUntil = (string) ($row['locked_until'] ?? '');
+        $now = new DateTimeImmutable('now', new DateTimeZone(date_default_timezone_get()));
+
+        if ($lockedUntil !== '') {
+            $lockTime = new DateTimeImmutable($lockedUntil, new DateTimeZone(date_default_timezone_get()));
+            if ($lockTime > $now) {
+                return $attempts;
+            }
+        }
+
+        $attempts++;
+        $lockUntilSql = null;
+        if ($attempts >= 5) {
+            $lockUntilSql = $now->modify('+15 minutes')->format('Y-m-d H:i:s');
+        }
+
+        $pdo->prepare('UPDATE users SET failed_login_attempts = :attempts, locked_until = :locked_until WHERE id = :id')->execute([
+            ':attempts' => $attempts,
+            ':locked_until' => $lockUntilSql,
+            ':id' => $userId,
+        ]);
+
+        return $attempts;
+    }
+
+    public static function clearFailedLogin(int $userId): bool
+    {
+        $pdo = get_db();
+        $statement = $pdo->prepare('UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE id = :id');
+        return $statement->execute([':id' => $userId]);
     }
 
     public static function hashPassword(string $password): string
